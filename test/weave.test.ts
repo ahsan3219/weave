@@ -34,4 +34,41 @@ describe('weave', () => {
     expect(raw.token).toBe('[REDACTED]');
     spy.mockRestore();
   });
+
+  it('supports snapshot and restoring context', () => {
+    const ctx = weave.create({ requestId: 'r1', traceId: 't1' });
+    const restored = weave.fromSnapshot(ctx.snapshot());
+
+    expect(restored.values.requestId).toBe('r1');
+    expect(restored.values.traceId).toBe('t1');
+  });
+
+  it('runs cleanup handlers in runScoped', async () => {
+    const ctx = weave.create({ requestId: 'r1' });
+    const cleanup = vi.fn();
+
+    ctx.onCleanup(cleanup);
+    await weave.runScoped(ctx, async () => 'ok');
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts timed out tasks', async () => {
+    const ctx = weave.create({ requestId: 'r1' });
+
+    await expect(
+      weave.run(ctx, () =>
+        weave.withTimeout('slow-task', 5, async (signal) => {
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, 20);
+            signal.addEventListener('abort', () => {
+              clearTimeout(timer);
+              reject(signal.reason);
+            });
+          });
+          return 'never';
+        })
+      )
+    ).rejects.toBeInstanceOf(Error);
+  });
 });
