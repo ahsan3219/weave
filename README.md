@@ -85,11 +85,32 @@ Package page: https://www.npmjs.com/package/@ahsan_raza_syed/weave
 - Lightweight spans with parent/child linkage.
 - Secret redaction for common keys and token/JWT-like values.
 - Fetch header injection (`x-weave-trace-id` by default).
+- Scope lifecycle hooks + abort signal propagation for cleanup/cancellation.
 - Zero runtime dependencies.
 
 ## API
 
 - `weave.create(values, options?)`
+- `weave.fromSnapshot(snapshot, options?)`
+- `weave.run(ctx, fn)`
+- `weave.runScoped(ctx, fn)`
+- `weave.bind(fn)`
+- `weave.guard(name, fn)`
+- `weave.withTimeout(label, ms, task)`
+- `weave.cancel(reason?)`
+- `weave.current`
+- `weave.autoTraceId()`
+
+## Publish on npm
+
+`weave` is configured for a public npm package page and distribution metadata. To publish:
+
+```bash
+npm run build
+npm publish --access public
+```
+
+NPM package page: https://www.npmjs.com/package/weave
 - `weave.run(ctx, fn)`
 - `weave.bind(fn)`
 - `weave.current`
