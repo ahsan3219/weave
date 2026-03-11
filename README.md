@@ -26,6 +26,7 @@ const ctx = weave.create({
 });
 
 await weave.runScoped(ctx, async () => {
+await weave.run(ctx, async () => {
   ctx.log.info('User action started');
 
   const span = ctx.startSpan('api.fetch');
@@ -79,6 +80,15 @@ npm publish --access public
 ```
 
 NPM package page: https://www.npmjs.com/package/weave
+- `weave.run(ctx, fn)`
+- `weave.bind(fn)`
+- `weave.current`
+- `weave.autoTraceId()`
+
+## Notes
+
+- In modern runtimes, Promise/timer/event/fetch hooks are patched once during first `create()`.
+- You can disable patching with: `weave.create(values, { enablePatching: false })`.
 
 ## License
 

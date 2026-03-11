@@ -14,6 +14,8 @@ export interface WeaveContext<T extends ContextRecord = ContextRecord> {
 export interface WeaveSnapshot<T extends ContextRecord = ContextRecord> {
   id: string;
   values: T;
+  startSpan(name: string, attrs?: ContextRecord): WeaveSpan<T>;
+  child<Next extends ContextRecord>(values: Next): WeaveContext<T & Next>;
 }
 
 export interface WeaveLogger<T extends ContextRecord = ContextRecord> {
@@ -48,6 +50,7 @@ interface WeaveOptions {
 
 const defaults: Required<WeaveOptions> = {
   redactKeys: ['password', 'token', 'authorization', 'apikey', 'secret'],
+  redactKeys: ['password', 'token', 'authorization', 'apiKey', 'secret'],
   enablePatching: true,
   headerName: 'x-weave-trace-id'
 };
@@ -117,6 +120,10 @@ function bindToCurrent<T extends (...args: any[]) => any>(fn: T): T {
   const boundContext = currentContext;
   const bound = ((...args: Parameters<T>) => withContext(boundContext, () => fn(...args))) as T & { __weave_bound?: boolean };
   bound.__weave_bound = true;
+  if ((fn as any).__weave_bound) return fn;
+  const boundContext = currentContext;
+  const bound = ((...args: Parameters<T>) => withContext(boundContext, () => fn(...args))) as T;
+  (bound as any).__weave_bound = true;
   return bound;
 }
 
@@ -145,6 +152,8 @@ function patchGlobals(options: Required<WeaveOptions>) {
       this,
       onfulfilled ? bindToCurrent(onfulfilled as (value: unknown) => TResult1 | PromiseLike<TResult1>) : onfulfilled,
       onrejected ? bindToCurrent(onrejected as (reason: unknown) => TResult2 | PromiseLike<TResult2>) : onrejected
+      onfulfilled ? bindToCurrent(onfulfilled as any) : onfulfilled,
+      onrejected ? bindToCurrent(onrejected as any) : onrejected
     );
   };
 
@@ -153,6 +162,7 @@ function patchGlobals(options: Required<WeaveOptions>) {
     onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null
   ): Promise<any> {
     return original.promiseCatch.call(this, onrejected ? bindToCurrent(onrejected as (reason: unknown) => TResult | PromiseLike<TResult>) : onrejected);
+    return original.promiseCatch.call(this, onrejected ? bindToCurrent(onrejected as any) : onrejected);
   };
 
   Promise.prototype.finally = function (this: Promise<any>, onfinally?: (() => void) | null): Promise<any> {
@@ -182,12 +192,14 @@ function patchGlobals(options: Required<WeaveOptions>) {
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const context = currentContext;
       if (!context) return original.fetch!(input, init);
+      if (!context) return original.fetch!(input as any, init);
 
       const headers = new Headers(init?.headers);
       const traceId = String(context.values.traceId ?? context.id);
       headers.set(options.headerName, traceId);
 
       return withContext(context, () => original.fetch!(input, { ...init, headers, signal: init?.signal ?? context.signal }));
+      return withContext(context, () => original.fetch!(input as any, { ...init, headers }));
     }) as typeof fetch;
   }
 }
@@ -211,6 +223,15 @@ function createLogger<T extends ContextRecord>(context: WeaveContext<T>, options
 
     const levelColor =
       level === 'error' ? color.red : level === 'warn' ? color.yellow : level === 'success' ? color.green : level === 'debug' ? color.gray : color.cyan;
+      level === 'error'
+        ? color.red
+        : level === 'warn'
+          ? color.yellow
+          : level === 'success'
+            ? color.green
+            : level === 'debug'
+              ? color.gray
+              : color.cyan;
 
     console.log(`${levelColor}${level.toUpperCase()}${color.reset} ${message}`, payload);
   };
@@ -241,6 +262,11 @@ function makeContext<T extends ContextRecord>(values: T, options: Required<Weave
     get signal() {
       return controller.signal;
     },
+function makeContext<T extends ContextRecord>(values: T, options: Required<WeaveOptions>): InternalContext<T> {
+  const id = String(values.traceId ?? randomId());
+  const ctx: InternalContext<T> = {
+    __brand: 'weave_ctx',
+    id,
     values: Object.freeze({ ...values }),
     log: undefined as unknown as WeaveLogger<T>,
     startSpan(name: string, attrs?: ContextRecord): WeaveSpan<T> {
@@ -249,6 +275,9 @@ function makeContext<T extends ContextRecord>(values: T, options: Required<Weave
       const traceId = String((ctx.values as Partial<T & { traceId: string }>).traceId ?? ctx.id);
       const parentId = typeof (ctx.values as Partial<T & { spanId: string }>).spanId === 'string' ? String((ctx.values as { spanId: string }).spanId) : undefined;
       const spanContext = ctx.child({ spanId, traceId } as { spanId: string; traceId: string });
+      const traceId = String((ctx.values as any).traceId ?? ctx.id);
+      const parentId = typeof (ctx.values as any).spanId === 'string' ? String((ctx.values as any).spanId) : undefined;
+      const spanContext = ctx.child({ spanId, traceId } as any);
 
       return {
         id: spanId,
@@ -273,6 +302,7 @@ function makeContext<T extends ContextRecord>(values: T, options: Required<Weave
     },
     snapshot(): WeaveSnapshot<T> {
       return { id: ctx.id, values: { ...(ctx.values as object) } as T };
+      return makeContext({ ...(ctx.values as object), ...(nextValues as object) } as T & Next, options);
     }
   };
 

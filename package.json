@@ -44,6 +44,12 @@
   },
   "publishConfig": {
     "access": "public"
+    "observability"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/weave.git"
   },
   "engines": {
     "node": ">=18"
