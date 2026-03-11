@@ -1,0 +1,59 @@
+{
+  "name": "@ahsan_raza_syed/weave",
+  "version": "0.1.0",
+  "description": "Context that just works. Logs that actually tell the story.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "async-context",
+    "logging",
+    "tracing",
+    "typescript",
+    "observability",
+    "abortsignal",
+    "timeout",
+    "edge-runtime"
+  ],
+  "license": "MIT",
+  "homepage": "https://www.npmjs.com/package/@ahsan_raza_syed/weave",
+  "bugs": {
+    "url": "https://github.com/ahsan_raza_syed/weave/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ahsan_raza_syed/weave.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}
