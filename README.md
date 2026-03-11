@@ -4,9 +4,13 @@
 
 `weave` is a tiny TypeScript-first async context + logging + spans utility for Node, browsers, Bun, Deno, and edge runtimes.
 
-[![npm version](https://img.shields.io/npm/v/weave.svg)](https://www.npmjs.com/package/weave)
-[![npm downloads](https://img.shields.io/npm/dm/weave.svg)](https://www.npmjs.com/package/weave)
+[![npm version](https://img.shields.io/npm/v/@ahsan_raza_syed/weave.svg)](https://www.npmjs.com/package/@ahsan_raza_syed/weave)
+[![npm downloads](https://img.shields.io/npm/dm/@ahsan_raza_syed/weave.svg)](https://www.npmjs.com/package/@ahsan_raza_syed/weave)
 
+## Install
+
+```bash
+npm i @ahsan_raza_syed/weave
 ## Install
 
 ```bash
@@ -16,6 +20,7 @@ npm i weave
 ## Quick start
 
 ```ts
+import { weave } from '@ahsan_raza_syed/weave';
 import { weave } from 'weave';
 
 const ctx = weave.create({
@@ -47,6 +52,32 @@ await weave.run(ctx, async () => {
 - **Unhandled async handler crashes**: `weave.guard(name, fn)` logs failures with the active context before rethrowing.
 - **Cancel entire request/task trees**: `weave.cancel(reason)` aborts current context signal and downstream operations that consume it.
 
+## Publish on npm (scoped account flow)
+
+If you use multiple npm registries/profiles with `npmrc`:
+
+```bash
+npmrc <profile-name>
+```
+
+Then publish from this package root:
+
+```bash
+npm login
+npm run build
+npm pack --dry-run
+npm publish --access public
+```
+
+Create package from scratch flow (npm docs style):
+
+```bash
+mkdir my-test-package
+cd my-test-package
+npm init --scope=@ahsan_raza_syed
+```
+
+Package page: https://www.npmjs.com/package/@ahsan_raza_syed/weave
 ## Features
 
 - Universal context propagation helpers (`run`, `bind`) and global async patching.
