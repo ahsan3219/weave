@@ -1,5 +1,4 @@
 {
-  "name": "@ahsan_raza_syed/weave",
   "name": "weave",
   "version": "0.1.0",
   "description": "Context that just works. Logs that actually tell the story.",
@@ -12,21 +11,26 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js",
+      "require": "./dist/adapters/index.cjs"
     }
   },
   "files": [
     "dist",
-    "README.md"
-    "dist"
+    "README.md",
+    "scripts"
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "build": "tsup src/index.ts src/adapters/index.ts --format esm,cjs --dts",
+    "trace-story": "node scripts/trace-story.mjs",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
-    "lint": "tsc --noEmit"
   },
   "keywords": [
     "async-context",
@@ -39,7 +43,7 @@
     "edge-runtime"
   ],
   "license": "MIT",
-  "homepage": "https://www.npmjs.com/package/@ahsan_raza_syed/weave",
+  "homepage": "https://www.npmjs.com/package/weave",
   "bugs": {
     "url": "https://github.com/ahsan_raza_syed/weave/issues"
   },
@@ -49,12 +53,6 @@
   },
   "publishConfig": {
     "access": "public"
-    "observability"
-  ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/example/weave.git"
   },
   "engines": {
     "node": ">=18"

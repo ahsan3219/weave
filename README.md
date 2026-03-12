@@ -2,15 +2,21 @@
 
 **Context that just works. Logs that actually tell the story. Tracing without ceremony.**
 
-`weave` is a tiny TypeScript-first async context + logging + spans utility for Node, browsers, Bun, Deno, and edge runtimes.
+`weave` is a tiny, zero-dependency, TypeScript-first async context + structured logging + lightweight tracing library for Node.js, Bun, Deno, browsers, and edge runtimes.
 
-[![npm version](https://img.shields.io/npm/v/@ahsan_raza_syed/weave.svg)](https://www.npmjs.com/package/@ahsan_raza_syed/weave)
-[![npm downloads](https://img.shields.io/npm/dm/@ahsan_raza_syed/weave.svg)](https://www.npmjs.com/package/@ahsan_raza_syed/weave)
+[![npm version](https://img.shields.io/npm/v/weave.svg)](https://www.npmjs.com/package/weave)
+[![npm downloads](https://img.shields.io/npm/dm/weave.svg)](https://www.npmjs.com/package/weave)
 
-## Install
+## Why weave?
 
-```bash
-npm i @ahsan_raza_syed/weave
+Every backend developer hits the same problems:
+
+1. **"Which log belongs to which request?"** — Logs are individual lines. Reconstructing the story of a single request means grepping by some ID you hopefully remembered to pass everywhere.
+2. **"Context vanishes in callbacks"** — You set `requestId` at the top, then `setTimeout`, `Promise.then`, or `fetch` loses it.
+3. **"The request just hung. No error. No timeout."** — Nothing aborted it because nobody wired up `AbortSignal` or a timeout.
+
+`weave` solves all three with a single `create` → `run` → done workflow, automatic global patching so context survives timers/promises/fetch, and built-in timeouts and cancellation.
+
 ## Install
 
 ```bash
@@ -20,106 +26,263 @@ npm i weave
 ## Quick start
 
 ```ts
-import { weave } from '@ahsan_raza_syed/weave';
 import { weave } from 'weave';
 
 const ctx = weave.create({
   requestId: crypto.randomUUID(),
   userId: 'u_123',
-  tenant: 'acme',
   traceId: weave.autoTraceId()
 });
 
 await weave.runScoped(ctx, async () => {
-await weave.run(ctx, async () => {
-  ctx.log.info('User action started');
+  ctx.log.info('Request started');
 
-  const span = ctx.startSpan('api.fetch');
-  await fetch('/api/data');
-  span.end();
+  const span = ctx.startSpan('db.query');
+  await db.users.findById('u_123');
+  span.end({ rows: 1 });
 
   setTimeout(() => {
-    ctx.log.success('still has context', { requestId: weave.current?.values.requestId });
+    // context is still here — weave patches timers automatically
+    ctx.log.success('Async callback', { requestId: weave.current?.values.requestId });
   }, 10);
+}, { timeoutMs: 30_000 }); // request aborts after 30s
+```
+
+## Core concepts
+
+### Context
+
+A context is a bag of key-value pairs (`requestId`, `traceId`, `userId`, ...) plus a logger, an `AbortSignal`, and lifecycle hooks.
+
+```ts
+const ctx = weave.create({ requestId: 'r1', traceId: weave.autoTraceId() });
+
+// Child context — inherits parent values, adds new ones, linked signal
+const child = ctx.child({ userId: 'u_42' });
+child.values.requestId; // 'r1' — inherited
+child.values.userId;    // 'u_42' — added
+```
+
+### Running in context
+
+```ts
+// Synchronous or async — context is available via weave.current inside fn
+weave.run(ctx, () => {
+  weave.current?.values.requestId; // 'r1'
+});
+
+// Scoped — runs cleanups after fn resolves/rejects + optional timeout
+await weave.runScoped(ctx, handler, { timeoutMs: 30_000 });
+```
+
+### Spans (lightweight tracing)
+
+```ts
+const span = ctx.startSpan('http.fetch', { url: '/api/data' });
+await fetch('/api/data');
+span.end({ status: 200 }); // logs duration, attributes, spanId, parentId, traceId
+
+// Nested spans get automatic parent linkage
+const parent = ctx.startSpan('handler');
+const child = parent.context.startSpan('db.query');
+child.parentId === parent.id; // true
+```
+
+### Structured logging
+
+Every log call includes context values automatically:
+
+```ts
+ctx.log.debug('cache miss');
+ctx.log.info('user loaded', { userId: 'u_42' });
+ctx.log.warn('rate limit near', { remaining: 5 });
+ctx.log.error('payment failed', { code: 'CARD_DECLINED' });
+ctx.log.success('order placed', { orderId: 'ord_1' });
+```
+
+In development, output is colorized. In production (`NODE_ENV=production`), output is one JSON line per call:
+
+```json
+{"level":"info","message":"user loaded","timestamp":"2025-03-12T00:00:00.000Z","requestId":"r1","traceId":"t1","userId":"u_42"}
+```
+
+### Secret redaction
+
+Keys like `password`, `token`, `authorization`, `apiKey`, `secret` are automatically redacted. Token patterns (`sk_*`, `ghp_*`) and JWTs are detected in values:
+
+```ts
+ctx.log.info('auth', { token: 'sk_live_abc123' });
+// logs: { token: '[REDACTED]' }
+
+ctx.log.info('jwt', { value: 'eyJhbGci.eyJzdWIi.sig' });
+// logs: { value: '[REDACTED_JWT]' }
+```
+
+### Timeout and cancellation
+
+```ts
+// Timeout a specific task
+const data = await weave.withTimeout('api-call', 5000, async (signal) => {
+  return fetch('/api/slow', { signal });
+});
+
+// Cancel the current context tree
+weave.run(ctx, () => {
+  weave.cancel('user navigated away');
+  ctx.signal.aborted; // true — all child contexts are also aborted
 });
 ```
 
-## Daily pain points solved (beyond context propagation)
+### Guard (error boundary)
 
-- **Hung requests / promises with no timeout behavior**: `weave.withTimeout()` gives a universal timeout wrapper with `AbortSignal` propagation and contextual error logs.
-- **Cleanup leaks across async boundaries**: register disposers with `ctx.onCleanup()` and execute safely with `weave.runScoped()`.
-- **Context lost when crossing worker/process boundaries**: `ctx.snapshot()` + `weave.fromSnapshot()` restore portable context payloads.
-- **Unhandled async handler crashes**: `weave.guard(name, fn)` logs failures with the active context before rethrowing.
-- **Cancel entire request/task trees**: `weave.cancel(reason)` aborts current context signal and downstream operations that consume it.
+```ts
+const safeFn = weave.run(ctx, () =>
+  weave.guard('payment', async () => {
+    await chargeCard();
+  })
+);
 
-## Publish on npm (scoped account flow)
-
-If you use multiple npm registries/profiles with `npmrc`:
-
-```bash
-npmrc <profile-name>
+await safeFn(); // on error: logs with context, then rethrows
 ```
 
-Then publish from this package root:
+### Snapshot and restore (cross-boundary)
 
-```bash
-npm login
-npm run build
-npm pack --dry-run
-npm publish --access public
+```ts
+// Serialize context for worker/queue/process boundary
+const snap = ctx.snapshot(); // { id, values }
+const json = JSON.stringify(snap);
+
+// On the other side:
+const restored = weave.fromSnapshot(JSON.parse(json));
+restored.values.requestId; // preserved
 ```
 
-Create package from scratch flow (npm docs style):
+### Trace ID on response
 
-```bash
-mkdir my-test-package
-cd my-test-package
-npm init --scope=@ahsan_raza_syed
+So clients or support can reference a specific request:
+
+```ts
+weave.run(ctx, () => {
+  weave.setTraceIdOnResponse(res); // Node res.setHeader or Web Response.headers
+});
 ```
 
-Package page: https://www.npmjs.com/package/@ahsan_raza_syed/weave
-## Features
+## Framework adapters
 
-- Universal context propagation helpers (`run`, `bind`) and global async patching.
-- Structured logger (`debug`, `info`, `warn`, `error`, `success`) with automatic context fields.
-- Lightweight spans with parent/child linkage.
-- Secret redaction for common keys and token/JWT-like values.
-- Fetch header injection (`x-weave-trace-id` by default).
-- Scope lifecycle hooks + abort signal propagation for cleanup/cancellation.
-- Zero runtime dependencies.
+One-line middleware. No peer dependencies — compatible with minimal request/response shapes.
 
-## API
+### Express
 
-- `weave.create(values, options?)`
-- `weave.fromSnapshot(snapshot, options?)`
-- `weave.run(ctx, fn)`
-- `weave.runScoped(ctx, fn)`
-- `weave.bind(fn)`
-- `weave.guard(name, fn)`
-- `weave.withTimeout(label, ms, task)`
-- `weave.cancel(reason?)`
-- `weave.current`
-- `weave.autoTraceId()`
+```ts
+import express from 'express';
+import { weave } from 'weave';
+import { weaveExpress } from 'weave/adapters';
 
-## Publish on npm
+const app = express();
+app.use(weaveExpress({ timeoutMs: 30_000 }));
 
-`weave` is configured for a public npm package page and distribution metadata. To publish:
-
-```bash
-npm run build
-npm publish --access public
+app.get('/api/data', (req, res) => {
+  weave.current?.log.info('handling request');
+  res.json({ ok: true });
+});
 ```
 
-NPM package page: https://www.npmjs.com/package/weave
-- `weave.run(ctx, fn)`
-- `weave.bind(fn)`
-- `weave.current`
-- `weave.autoTraceId()`
+### Fastify
 
-## Notes
+```ts
+import Fastify from 'fastify';
+import { weave } from 'weave';
+import { weaveFastify } from 'weave/adapters';
 
-- In modern runtimes, Promise/timer/event/fetch hooks are patched once during first `create()`.
-- You can disable patching with: `weave.create(values, { enablePatching: false })`.
+const fastify = Fastify();
+await fastify.register(weaveFastify());
+
+fastify.get('/api/data', async (request, reply) => {
+  const ctx = (request as any).weaveContext;
+  return weave.run(ctx, () => {
+    ctx.log.info('handling request');
+    return { ok: true };
+  });
+});
+```
+
+### Hono
+
+```ts
+import { Hono } from 'hono';
+import { weave } from 'weave';
+import { weaveHono } from 'weave/adapters';
+
+const app = new Hono();
+app.use('*', weaveHono({ timeoutMs: 30_000 }));
+
+app.get('/api/data', (c) => {
+  weave.current?.log.info('handling request');
+  return c.json({ ok: true });
+});
+```
+
+### Next.js (App Router)
+
+```ts
+import { weave } from 'weave';
+import { withWeaveNext } from 'weave/adapters';
+
+export const GET = withWeaveNext(async (request) => {
+  weave.current?.log.info('handling request');
+  return Response.json({ ok: true });
+}, { timeoutMs: 10_000 });
+```
+
+All adapters read an incoming `x-weave-trace-id` header (configurable via `headerName`) and set it on the response.
+
+## Trace story script
+
+Filter JSON logs by `traceId` and print in timestamp order:
+
+```bash
+cat logs.jsonl | node scripts/trace-story.mjs <traceId>
+```
+
+Use the trace ID from the response header to reconstruct "what happened for this request" from your log stream.
+
+## API reference
+
+| Method | Description |
+|--------|-------------|
+| `weave.create(values, options?)` | Create a new context. Patches globals on first call. |
+| `weave.run(ctx, fn)` | Run `fn` with `ctx` as the active context. |
+| `weave.runScoped(ctx, fn, { timeoutMs? })` | Run `fn`, then run cleanups. Optional timeout. |
+| `weave.bind(fn)` | Bind `fn` to the current context for later invocation. |
+| `weave.guard(name, fn)` | Wrap `fn` to log errors with context before rethrowing. |
+| `weave.withTimeout(label, ms, task)` | Run `task(signal)` with a timeout. |
+| `weave.cancel(reason?)` | Abort the current context's signal (cascades to children). |
+| `weave.setTraceIdOnResponse(res, headerName?)` | Set trace ID on a Node or Web response. |
+| `weave.fromSnapshot(snapshot, options?)` | Restore a context from a serialized snapshot. |
+| `weave.current` | The currently active context, or `undefined`. |
+| `weave.autoTraceId()` | Generate a trace ID (`crypto.randomUUID` or fallback). |
+
+**Context methods:** `ctx.child(values)`, `ctx.startSpan(name, attrs?)`, `ctx.onCleanup(fn)`, `ctx.snapshot()`, `ctx.log.*`, `ctx.signal`.
+
+**Options:** `{ redactKeys?: string[], enablePatching?: boolean, headerName?: string }`.
+
+**Exported types:** `WeaveContext`, `WeaveSnapshot`, `WeaveLogger`, `WeaveSpan`, `WeaveLogPayload`, `WeaveOptions`, `ContextRecord`.
+
+## How it works
+
+On the first `weave.create()`, weave patches `setTimeout`, `setInterval`, `queueMicrotask`, `Promise.prototype.then/catch/finally`, `EventTarget.addEventListener`, and `fetch` so that the active context propagates into all async continuations. Disable with `enablePatching: false`.
+
+Context is stored in a module-level variable and swapped in/out by `withContext` (not `AsyncLocalStorage`) so it works in browsers and edge runtimes too.
+
+## Context checklist
+
+Quick checklist for "one story per request":
+
+- [ ] Create a context per request with `weave.create({ requestId, traceId })` or use a framework adapter.
+- [ ] Run handlers inside `weave.run(ctx, fn)` or `weave.runScoped(ctx, fn)`.
+- [ ] Set a default timeout: `weave.runScoped(ctx, fn, { timeoutMs: 30_000 })`.
+- [ ] Put the trace ID on the response: `weave.setTraceIdOnResponse(res)`.
+- [ ] In production, pipe JSON logs to your aggregator and filter by `traceId`.
 
 ## License
 

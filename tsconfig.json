@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "lib": ["ES2022", "DOM", "WebWorker"]
+    "lib": ["ES2022", "DOM", "WebWorker"],
+    "types": ["node"]
   },
   "include": ["src", "test"]
 }

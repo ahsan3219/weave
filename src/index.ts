@@ -1,5 +1,18 @@
 export type ContextRecord = Record<string, unknown>;
 
+/** Standard JSON log shape for one trace—enables "story for one request" in aggregators. */
+export interface WeaveLogPayload {
+  level: string;
+  message: string;
+  timestamp: string;
+  traceId?: string;
+  spanId?: string;
+  parentSpanId?: string;
+  requestId?: string;
+  durationMs?: number;
+  [key: string]: unknown;
+}
+
 export interface WeaveContext<T extends ContextRecord = ContextRecord> {
   readonly id: string;
   readonly values: Readonly<T>;
@@ -14,8 +27,6 @@ export interface WeaveContext<T extends ContextRecord = ContextRecord> {
 export interface WeaveSnapshot<T extends ContextRecord = ContextRecord> {
   id: string;
   values: T;
-  startSpan(name: string, attrs?: ContextRecord): WeaveSpan<T>;
-  child<Next extends ContextRecord>(values: Next): WeaveContext<T & Next>;
 }
 
 export interface WeaveLogger<T extends ContextRecord = ContextRecord> {
@@ -50,7 +61,6 @@ interface WeaveOptions {
 
 const defaults: Required<WeaveOptions> = {
   redactKeys: ['password', 'token', 'authorization', 'apikey', 'secret'],
-  redactKeys: ['password', 'token', 'authorization', 'apiKey', 'secret'],
   enablePatching: true,
   headerName: 'x-weave-trace-id'
 };
@@ -120,10 +130,6 @@ function bindToCurrent<T extends (...args: any[]) => any>(fn: T): T {
   const boundContext = currentContext;
   const bound = ((...args: Parameters<T>) => withContext(boundContext, () => fn(...args))) as T & { __weave_bound?: boolean };
   bound.__weave_bound = true;
-  if ((fn as any).__weave_bound) return fn;
-  const boundContext = currentContext;
-  const bound = ((...args: Parameters<T>) => withContext(boundContext, () => fn(...args))) as T;
-  (bound as any).__weave_bound = true;
   return bound;
 }
 
@@ -132,12 +138,12 @@ function patchGlobals(options: Required<WeaveOptions>) {
   patched = true;
 
   globalThis.setTimeout = ((handler: TimerHandler, timeout?: number, ...args: any[]) => {
-    if (typeof handler === 'function') return original.setTimeout(bindToCurrent(handler), timeout, ...args);
+    if (typeof handler === 'function') return original.setTimeout(bindToCurrent(handler as (...args: any[]) => any), timeout, ...args);
     return original.setTimeout(handler, timeout, ...args);
   }) as typeof setTimeout;
 
   globalThis.setInterval = ((handler: TimerHandler, timeout?: number, ...args: any[]) => {
-    if (typeof handler === 'function') return original.setInterval(bindToCurrent(handler), timeout, ...args);
+    if (typeof handler === 'function') return original.setInterval(bindToCurrent(handler as (...args: any[]) => any), timeout, ...args);
     return original.setInterval(handler, timeout, ...args);
   }) as typeof setInterval;
 
@@ -152,9 +158,7 @@ function patchGlobals(options: Required<WeaveOptions>) {
       this,
       onfulfilled ? bindToCurrent(onfulfilled as (value: unknown) => TResult1 | PromiseLike<TResult1>) : onfulfilled,
       onrejected ? bindToCurrent(onrejected as (reason: unknown) => TResult2 | PromiseLike<TResult2>) : onrejected
-      onfulfilled ? bindToCurrent(onfulfilled as any) : onfulfilled,
-      onrejected ? bindToCurrent(onrejected as any) : onrejected
-    );
+    ) as Promise<TResult1 | TResult2>;
   };
 
   Promise.prototype.catch = function <TResult = never>(
@@ -162,7 +166,6 @@ function patchGlobals(options: Required<WeaveOptions>) {
     onrejected?: ((reason: any) => TResult | PromiseLike<TResult>) | null
   ): Promise<any> {
     return original.promiseCatch.call(this, onrejected ? bindToCurrent(onrejected as (reason: unknown) => TResult | PromiseLike<TResult>) : onrejected);
-    return original.promiseCatch.call(this, onrejected ? bindToCurrent(onrejected as any) : onrejected);
   };
 
   Promise.prototype.finally = function (this: Promise<any>, onfinally?: (() => void) | null): Promise<any> {
@@ -192,14 +195,12 @@ function patchGlobals(options: Required<WeaveOptions>) {
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const context = currentContext;
       if (!context) return original.fetch!(input, init);
-      if (!context) return original.fetch!(input as any, init);
 
       const headers = new Headers(init?.headers);
       const traceId = String(context.values.traceId ?? context.id);
       headers.set(options.headerName, traceId);
 
       return withContext(context, () => original.fetch!(input, { ...init, headers, signal: init?.signal ?? context.signal }));
-      return withContext(context, () => original.fetch!(input as any, { ...init, headers }));
     }) as typeof fetch;
   }
 }
@@ -222,7 +223,6 @@ function createLogger<T extends ContextRecord>(context: WeaveContext<T>, options
     }
 
     const levelColor =
-      level === 'error' ? color.red : level === 'warn' ? color.yellow : level === 'success' ? color.green : level === 'debug' ? color.gray : color.cyan;
       level === 'error'
         ? color.red
         : level === 'warn'
@@ -262,27 +262,19 @@ function makeContext<T extends ContextRecord>(values: T, options: Required<Weave
     get signal() {
       return controller.signal;
     },
-function makeContext<T extends ContextRecord>(values: T, options: Required<WeaveOptions>): InternalContext<T> {
-  const id = String(values.traceId ?? randomId());
-  const ctx: InternalContext<T> = {
-    __brand: 'weave_ctx',
-    id,
     values: Object.freeze({ ...values }),
     log: undefined as unknown as WeaveLogger<T>,
     startSpan(name: string, attrs?: ContextRecord): WeaveSpan<T> {
       const startedAt = performance.now();
       const spanId = randomId();
       const traceId = String((ctx.values as Partial<T & { traceId: string }>).traceId ?? ctx.id);
-      const parentId = typeof (ctx.values as Partial<T & { spanId: string }>).spanId === 'string' ? String((ctx.values as { spanId: string }).spanId) : undefined;
+      const parentId: string | undefined = typeof (ctx.values as unknown as Partial<{ spanId: string }>).spanId === 'string' ? String((ctx.values as unknown as { spanId: string }).spanId) : undefined;
       const spanContext = ctx.child({ spanId, traceId } as { spanId: string; traceId: string });
-      const traceId = String((ctx.values as any).traceId ?? ctx.id);
-      const parentId = typeof (ctx.values as any).spanId === 'string' ? String((ctx.values as any).spanId) : undefined;
-      const spanContext = ctx.child({ spanId, traceId } as any);
 
       return {
         id: spanId,
         traceId,
-        parentId,
+        ...(parentId !== undefined ? { parentId } : {}),
         name,
         context: spanContext,
         end(meta?: ContextRecord) {
@@ -302,11 +294,10 @@ function makeContext<T extends ContextRecord>(values: T, options: Required<Weave
     },
     snapshot(): WeaveSnapshot<T> {
       return { id: ctx.id, values: { ...(ctx.values as object) } as T };
-      return makeContext({ ...(ctx.values as object), ...(nextValues as object) } as T & Next, options);
     }
   };
 
-  ctx.log = createLogger(ctx, options);
+  (ctx as InternalContext<T> & { log: WeaveLogger<T> }).log = createLogger(ctx, options);
   return ctx;
 }
 
@@ -337,9 +328,18 @@ export const weave = {
     return withContext(context as InternalContext, fn);
   },
 
-  async runScoped<T>(context: WeaveContext, fn: () => T | Promise<T>): Promise<T> {
+  async runScoped<T>(
+    context: WeaveContext,
+    fn: () => T | Promise<T>,
+    options?: { timeoutMs?: number }
+  ): Promise<T> {
     const internal = context as InternalContext;
     try {
+      if (options?.timeoutMs != null && options.timeoutMs > 0) {
+        return await this.withTimeout('runScoped', options.timeoutMs, () =>
+          withContext(internal, fn) as Promise<T>
+        );
+      }
       return await withContext(internal, fn);
     } finally {
       await runCleanups(internal);
@@ -374,7 +374,15 @@ export const weave = {
 
   async withTimeout<T>(label: string, ms: number, task: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new Error(`Timeout in ${label} after ${ms}ms`)), ms);
+    const timeoutError = new Error(`Timeout in ${label} after ${ms}ms`);
+
+    let timerId: ReturnType<typeof setTimeout>;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timerId = setTimeout(() => {
+        controller.abort(timeoutError);
+        reject(timeoutError);
+      }, ms);
+    });
 
     const parent = currentContext as InternalContext | undefined;
     if (parent) {
@@ -383,12 +391,12 @@ export const weave = {
     }
 
     try {
-      return await task(controller.signal);
+      return await Promise.race([task(controller.signal), timeoutPromise]);
     } catch (error) {
       parent?.log.error(`timeout:${label}`, { ms, error: error instanceof Error ? error.message : String(error) });
       throw error;
     } finally {
-      clearTimeout(timer);
+      clearTimeout(timerId!);
     }
   },
 
@@ -400,6 +408,26 @@ export const weave = {
   autoTraceId(): string {
     if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
     return `${Date.now().toString(16)}-${randomId()}`;
+  },
+
+  /**
+   * Set trace ID on a response so clients can reference it (e.g. for support or debugging).
+   * Accepts a Web API Response (set via headers) or a Node-style response with setHeader(name, value).
+   */
+  setTraceIdOnResponse(
+    response: { headers?: Headers; setHeader?(name: string, value: string): void },
+    headerName = 'x-weave-trace-id'
+  ): void {
+    const ctx = currentContext;
+    const traceId = ctx ? String((ctx.values as { traceId?: string }).traceId ?? ctx.id) : undefined;
+    if (!traceId) return;
+    if (response.headers instanceof Headers) {
+      response.headers.set(headerName, traceId);
+      return;
+    }
+    if (typeof response.setHeader === 'function') {
+      response.setHeader(headerName, traceId);
+    }
   }
 };
 
