@@ -1,5 +1,6 @@
 {
   "name": "@ahsan_raza_syed/weave",
+  "name": "weave",
   "version": "0.1.0",
   "description": "Context that just works. Logs that actually tell the story.",
   "type": "module",
@@ -16,6 +17,7 @@
   "files": [
     "dist",
     "README.md"
+    "dist"
   ],
   "sideEffects": false,
   "scripts": {
@@ -24,6 +26,7 @@
     "test": "vitest run",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
+    "lint": "tsc --noEmit"
   },
   "keywords": [
     "async-context",
@@ -46,6 +49,12 @@
   },
   "publishConfig": {
     "access": "public"
+    "observability"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/example/weave.git"
   },
   "engines": {
     "node": ">=18"
