@@ -4,8 +4,8 @@
 
 `weave` is a tiny, zero-dependency, TypeScript-first async context + structured logging + lightweight tracing library for Node.js, Bun, Deno, browsers, and edge runtimes.
 
-[![npm version](https://img.shields.io/npm/v/weave.svg)](https://www.npmjs.com/package/weave)
-[![npm downloads](https://img.shields.io/npm/dm/weave.svg)](https://www.npmjs.com/package/weave)
+[![npm version](https://img.shields.io/npm/v/@ahsan3219/weave.svg)](https://www.npmjs.com/package/@ahsan3219/weave)
+[![npm downloads](https://img.shields.io/npm/dm/@ahsan3219/weave.svg)](https://www.npmjs.com/package/@ahsan3219/weave)
 
 ## Why weave?
 
@@ -20,13 +20,13 @@ Every backend developer hits the same problems:
 ## Install
 
 ```bash
-npm i weave
+npm i @ahsan3219/weave
 ```
 
 ## Quick start
 
 ```ts
-import { weave } from 'weave';
+import { weave } from '@ahsan3219/weave';
 
 const ctx = weave.create({
   requestId: crypto.randomUUID(),
@@ -175,8 +175,8 @@ One-line middleware. No peer dependencies — compatible with minimal request/re
 
 ```ts
 import express from 'express';
-import { weave } from 'weave';
-import { weaveExpress } from 'weave/adapters';
+import { weave } from '@ahsan3219/weave';
+import { weaveExpress } from '@ahsan3219/weave/adapters';
 
 const app = express();
 app.use(weaveExpress({ timeoutMs: 30_000 }));
@@ -191,8 +191,8 @@ app.get('/api/data', (req, res) => {
 
 ```ts
 import Fastify from 'fastify';
-import { weave } from 'weave';
-import { weaveFastify } from 'weave/adapters';
+import { weave } from '@ahsan3219/weave';
+import { weaveFastify } from '@ahsan3219/weave/adapters';
 
 const fastify = Fastify();
 await fastify.register(weaveFastify());
@@ -210,8 +210,8 @@ fastify.get('/api/data', async (request, reply) => {
 
 ```ts
 import { Hono } from 'hono';
-import { weave } from 'weave';
-import { weaveHono } from 'weave/adapters';
+import { weave } from '@ahsan3219/weave';
+import { weaveHono } from '@ahsan3219/weave/adapters';
 
 const app = new Hono();
 app.use('*', weaveHono({ timeoutMs: 30_000 }));
@@ -225,8 +225,8 @@ app.get('/api/data', (c) => {
 ### Next.js (App Router)
 
 ```ts
-import { weave } from 'weave';
-import { withWeaveNext } from 'weave/adapters';
+import { weave } from '@ahsan3219/weave';
+import { withWeaveNext } from '@ahsan3219/weave/adapters';
 
 export const GET = withWeaveNext(async (request) => {
   weave.current?.log.info('handling request');
