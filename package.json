@@ -1,5 +1,5 @@
 {
-  "name": "@ahsan3219/weave",
+  "name": "@ahsan_raza_syed/weave",
   "version": "0.1.0",
   "description": "Context that just works. Logs that actually tell the story.",
   "type": "module",
@@ -43,7 +43,7 @@
     "edge-runtime"
   ],
   "license": "MIT",
-  "homepage": "https://www.npmjs.com/package/@ahsan3219/weave",
+  "homepage": "https://www.npmjs.com/package/@ahsan_raza_syed/weave",
   "bugs": {
     "url": "https://github.com/ahsan3219/weave/issues"
   },
